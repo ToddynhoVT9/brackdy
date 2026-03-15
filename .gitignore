@@ -1,0 +1,5 @@
+node_modules/
+dist/
+_*
+vitest-output.txt
+.DS_Store

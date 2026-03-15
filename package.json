@@ -1,0 +1,31 @@
+{
+  "name": "brackdy",
+  "version": "0.3.0",
+  "description": "Compiler for the Brackdy (.by) UI DSL — transforms .by files into HTML, CSS, and TypeScript bindings",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "brackdy": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "dsl",
+    "compiler",
+    "ui",
+    "html",
+    "css"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

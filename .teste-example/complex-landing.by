@@ -1,0 +1,89 @@
+@logic "./landing.logic.ts"
+
+(
+  background:#0F1117
+  color:#F5F7FF
+  padding:32px
+)
+[#landing::main
+  (
+    background:#121826
+    padding:20px
+  )
+  [header
+    [nav
+      [a |> $href:"#hero-section" "Início"]
+      [a |> $href:"#feature-grid" "Recursos"]
+      [a |> $href:"#social-proof" "Resultados"]
+      [a |> $href:"#cta-final" "Contato"]
+    ]
+  ]
+
+  [#hero-section::section |> background:#1B2235 padding:48px @click:openHero
+    [#hero-title::h1 "Operação inteligente para produtos digitais"]
+    [p "Planeje, execute e monitore campanhas com automações orientadas por dados em tempo real."]
+    [nav
+      [a |> $href:"/demo" "Agendar demonstração"]
+      [a |> $href:"/pricing" "Ver planos"]
+    ]
+  ]
+
+  (
+    display:grid
+    grid-template-columns:1fr
+    gap:24px
+    md.grid-template-columns:1fr 1fr
+    xl.grid-template-columns:1fr 1fr 1fr
+  )
+  [#feature-grid::main
+    (background:#202A44 padding:20px)
+    [article
+      [h2 "Automação de jornadas"]
+      [p "Dispare ações baseadas em comportamento sem depender de fluxos manuais."]
+    ]
+
+    (background:#22304D padding:20px)
+    [article
+      [h2 "Insights em minutos"]
+      [p "Consolide métricas de aquisição, retenção e receita em um único painel."]
+    ]
+
+    (background:#243755 padding:20px)
+    [article
+      [h2 "Governança de experimentos"]
+      [p "Padronize hipóteses, critérios de sucesso e rollout com segurança."]
+    ]
+  ]
+
+  (
+    background:#151B2C
+    padding:28px
+  )
+  [#social-proof::section |> @click:openCases
+    [h2 "Times de alta performance já usam"]
+    [p "De scale-ups a empresas globais, reduzindo ciclo de decisão e custo operacional."]
+    [main
+      (background:#1D253B padding:16px)
+      [article
+        [h2 "+42% de conversão"]
+        [p "Em 90 dias com segmentação dinâmica e testes contínuos."]
+      ]
+
+      (background:#1F2941 padding:16px)
+      [article
+        [h2 "-28% de churn"]
+        [p "Com alertas preditivos e ações automáticas de retenção."]
+      ]
+    ]
+  ]
+
+  (
+    background:#0E1424
+    padding:24px
+  )
+  [#cta-final::footer |> @click:openContact
+    [h2 "Pronto para escalar com previsibilidade?"]
+    [p "Fale com o time e construa um plano de crescimento orientado por dados."]
+    [a |> $href:"/contact" "Solicitar contato"]
+  ]
+]
