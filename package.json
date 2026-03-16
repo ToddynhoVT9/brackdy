@@ -1,31 +1,35 @@
 {
   "name": "brackdy",
-  "version": "0.3.0",
-  "description": "Compiler for the Brackdy (.by) UI DSL — transforms .by files into HTML, CSS, and TypeScript bindings",
-  "type": "module",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
-  "bin": {
-    "brackdy": "dist/cli/index.js"
-  },
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "scripts": {
+    "dev": "ts-node cli/index.ts",
     "build": "tsc",
-    "dev": "tsx src/index.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
-  "keywords": [
-    "dsl",
-    "compiler",
-    "ui",
-    "html",
-    "css"
-  ],
-  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ToddynhoVT9/brackdy.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ToddynhoVT9/brackdy/issues"
+  },
+  "homepage": "https://github.com/ToddynhoVT9/brackdy#readme",
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "@vitest/coverage-v8": "^4.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
   }
 }

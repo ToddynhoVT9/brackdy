@@ -1,41 +1,12 @@
-// ─── Brackdy Compiler — Parser ───────────────────────────────────────
-// See: brackdy-compiler-plan/03-parser.md
-// See: brackdy-prompts/prompt-lexer-parser.md
-//
-// Hand-written recursive-descent parser.
-// Consumes a Token[] (from the Lexer) and emits a Program AST node.
-
-import { TokenType, type Token } from "../lexer/tokens.js";
-import type {
-  Program,
-  PropBlock,
-  Prop,
-  VisualProp,
-  ResponsiveProp,
-  EventProp,
-  AttrProp,
-  NodeDecl,
-  ChildNode,
-  ComponentDef,
-  ComponentCall,
-  SlotPropDef,
-  SlotNodeDef,
-  ComponentBodyNode,
-  SlotPropOverride,
-  SlotNodeOverride,
-} from "./ast.js";
+import { Token } from "../lexer/Token";
+import { TokenType } from "../lexer/TokenType";
+import { ParseError } from "../errors/CompilerError";
 import {
-  BrackdyError,
-  ParseExpectedTokenError,
-  ParseUnknownTagError,
-  ParseIdWithoutTagError,
-  ParseTextAndChildrenError,
-  ParseComponentLowercaseError,
-  ParseNestedDefError,
-  ParseUnexpectedEofError,
-} from "../errors/errors.js";
-
-// ─── Allowed tags ────────────────────────────────────────────────────
+  Program, PropBlock, Prop, VisualProp, EventProp, AttrProp, ResponsiveProp,
+  NodeDecl, ChildNode, ComponentDef, ComponentCall,
+  SlotPropDef, SlotNodeDef, ComponentBodyNode,
+  SlotPropOverride, SlotNodeOverride, AstNode,
+} from "./nodes/ASTNode";
 
 const ALLOWED_TAGS = new Set([
   "main", "section", "article", "nav", "aside", "header", "footer", "div",
@@ -43,134 +14,38 @@ const ALLOWED_TAGS = new Set([
   "button", "a",
 ]);
 
-// ─── Valid breakpoints ───────────────────────────────────────────────
-
 const BREAKPOINTS = new Set(["sm", "md", "lg", "xl"]);
 
-// ─── Parser class ────────────────────────────────────────────────────
-
 export class Parser {
-  private pos = 0;
-  private readonly tokens: Token[];
+  private tokens: Token[];
+  private pos: number = 0;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
   }
 
-  // ── Public API ───────────────────────────────────────────────────
-
   parse(): Program {
-    return this.parseProgram();
-  }
-
-  // ── Cursor helpers ───────────────────────────────────────────────
-
-  /** Returns the current token without advancing. */
-  private current(): Token {
-    if (this.pos >= this.tokens.length) {
-      // safety — should not happen because we always have an EOF token
-      return { type: TokenType.EOF, value: "", line: 0, col: 0 };
-    }
-    return this.tokens[this.pos];
-  }
-
-  /** Peeks at a token ahead of the cursor without advancing. */
-  private peek(offset: number = 1): Token {
-    const idx = this.pos + offset;
-    if (idx >= this.tokens.length) {
-      return { type: TokenType.EOF, value: "", line: 0, col: 0 };
-    }
-    return this.tokens[idx];
-  }
-
-  /** Consumes and returns the current token, advancing the cursor. */
-  private advance(): Token {
-    const tok = this.current();
-    this.pos++;
-    return tok;
-  }
-
-  /** Returns true if the current token matches the given type. */
-  private check(type: TokenType): boolean {
-    return this.current().type === type;
-  }
-
-  /** Returns true if the current token has the given type AND value. */
-  private checkValue(type: TokenType, value: string): boolean {
-    const tok = this.current();
-    return tok.type === type && tok.value === value;
-  }
-
-  /**
-   * Expects the current token to be of the given type.
-   * If it matches, advances and returns it.
-   * Otherwise, throws `ParseExpectedTokenError`.
-   */
-  private expect(type: TokenType, hint?: string): Token {
-    const tok = this.current();
-    if (tok.type !== type) {
-      const expected = hint ?? TokenType[type];
-      throw new ParseExpectedTokenError(
-        expected,
-        TokenType[tok.type],
-        tok.value,
-        tok.line,
-        tok.col,
-      );
-    }
-    return this.advance();
-  }
-
-  /** True when the current token is EOF. */
-  private isAtEnd(): boolean {
-    return this.current().type === TokenType.EOF;
-  }
-
-  /** Throws a Parse-phase BrackdyError. */
-  private error(msg: string, token?: Token): never {
-    const t = token ?? this.current();
-    throw new BrackdyError("Parse", msg, t.line, t.col);
-  }
-
-  // ── Top-level parse ──────────────────────────────────────────────
-
-  /**
-   * Program := LogicDecl? (ComponentDef | ComponentCall | PropBlock | NodeDecl)*
-   */
-  private parseProgram(): Program {
-    const startTok = this.current();
+    const startToken = this.current();
     let logicFile: string | null = null;
     const definitions: ComponentDef[] = [];
-    const body: (PropBlock | NodeDecl | ComponentCall | ComponentDef)[] = [];
+    const body: AstNode[] = [];
 
-    // Optional @logic declaration
+    // @logic opcional no topo
     if (this.check(TokenType.KW_LOGIC)) {
       logicFile = this.parseLogicDecl();
     }
 
-    // Loop until EOF
     while (!this.isAtEnd()) {
-      if (this.check(TokenType.LBRACKET)) {
-        const next = this.peek(1);
-
-        if (next.type === TokenType.DOUBLE_RANGLE) {
-          // [>>Name ...] → component definition
-          const def = this.parseComponentDef();
-          definitions.push(def);
-          body.push(def);
-        } else if (next.type === TokenType.RANGLE) {
-          // [>Name ...] → component call
-          body.push(this.parseComponentCall());
-        } else {
-          // [tag ...] → node declaration
-          body.push(this.parseNodeDecl());
-        }
+      if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.DOUBLE_RANGLE) {
+        definitions.push(this.parseComponentDef());
+      } else if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.RANGLE) {
+        body.push(this.parseComponentCall());
       } else if (this.check(TokenType.LPAREN)) {
         body.push(this.parsePropBlock());
+      } else if (this.check(TokenType.LBRACKET)) {
+        body.push(this.parseNodeDecl());
       } else {
-        this.error(
-          `Unexpected token ${TokenType[this.current().type]} ("${this.current().value}")`,
-        );
+        this.error(`Token inesperado: ${this.current().type} ("${this.current().value}")`);
       }
     }
 
@@ -179,156 +54,120 @@ export class Parser {
       logicFile,
       definitions,
       body,
-      line: startTok.line,
-      col: startTok.col,
+      line: startToken.line,
+      col: startToken.col,
     };
   }
 
-  // ── Logic declaration ────────────────────────────────────────────
+  // ─── Logic Declaration ───
 
-  /**
-   * LogicDecl := KW_LOGIC STRING
-   */
   private parseLogicDecl(): string {
     this.expect(TokenType.KW_LOGIC);
-    const str = this.expect(TokenType.STRING, "STRING (logic file path)");
-    return str.value;
+    const pathToken = this.expect(TokenType.STRING, "caminho do arquivo lógico");
+    return pathToken.value;
   }
 
-  // ── Prop blocks ──────────────────────────────────────────────────
+  // ─── PropBlock ───
 
-  /**
-   * PropBlock := LPAREN Prop* RPAREN
-   */
   private parsePropBlock(): PropBlock {
-    const openTok = this.expect(TokenType.LPAREN);
+    const start = this.expect(TokenType.LPAREN);
     const props: Prop[] = [];
 
     while (!this.check(TokenType.RPAREN) && !this.isAtEnd()) {
+      // Skip slot prop defs that appear in component def context
+      if (this.check(TokenType.LANGLE)) {
+        // This is a SlotPropDef — skip it (it's handled by parsePropSlotDefBlock)
+        this.parseSlotPropInDef();
+        continue;
+      }
       props.push(this.parseOneProp());
     }
 
-    this.expect(TokenType.RPAREN, "RPAREN ')'");
-
-    return {
-      kind: "PropBlock",
-      props,
-      line: openTok.line,
-      col: openTok.col,
-    };
+    this.expect(TokenType.RPAREN);
+    return { kind: "PropBlock", props, line: start.line, col: start.col };
   }
 
-  /**
-   * Prop := EventProp | AttrProp | ResponsiveProp | VisualProp
-   */
+  // ─── Prop Parsing ───
+
   private parseOneProp(): Prop {
-    // @event:action
+    // Nota: SlotPropDef (<slotName>key:value) é tratado separadamente no parsePropBlock
+
+    // Evento: @evento:acao  ou  @evento:ns.acao
     if (this.check(TokenType.AT)) {
       return this.parseEventProp();
     }
 
-    // $attr:value
+    // Atributo HTML: $attr:value
     if (this.check(TokenType.DOLLAR)) {
       return this.parseAttrProp();
     }
 
-    // Check for responsive prop: IDENT DOT IDENT COLON
-    if (this.check(TokenType.IDENT)) {
-      const maybeBreakpoint = this.current().value;
-      if (
-        BREAKPOINTS.has(maybeBreakpoint) &&
-        this.peek(1).type === TokenType.DOT &&
-        this.peek(2).type === TokenType.IDENT
-      ) {
+    // Responsiva: bp.prop:value  OU  Visual: prop:value
+    const identToken = this.current();
+
+    // Verificar se é responsiva: IDENT DOT IDENT COLON
+    if (this.check(TokenType.IDENT) && BREAKPOINTS.has(identToken.value)) {
+      const next1 = this.peek(1);
+      if (next1.type === TokenType.DOT) {
         return this.parseResponsiveProp();
       }
-
-      // Regular visual prop: IDENT COLON value
-      return this.parseVisualProp();
     }
 
-    // Slot prop definitions inside component ( <slot>key:value )
-    // This is handled by parseSlotPropDefBlock, should not reach here
-    this.error(`Unexpected token in property block: ${TokenType[this.current().type]} ("${this.current().value}")`);
+    return this.parseVisualProp();
   }
 
-  /**
-   * VisualProp := IDENT COLON ValueTokens
-   */
   private parseVisualProp(): VisualProp {
-    const keyTok = this.expect(TokenType.IDENT, "property name");
+    const keyToken = this.expect(TokenType.IDENT, "nome de propriedade CSS");
     this.expect(TokenType.COLON);
     const value = this.parseValue();
-
-    return {
-      kind: "VisualProp",
-      key: keyTok.value,
-      value,
-      line: keyTok.line,
-      col: keyTok.col,
-    };
+    return { kind: "VisualProp", key: keyToken.value, value, line: keyToken.line, col: keyToken.col };
   }
 
-  /**
-   * ResponsiveProp := IDENT DOT IDENT COLON ValueTokens
-   */
   private parseResponsiveProp(): ResponsiveProp {
-    const bpTok = this.expect(TokenType.IDENT, "breakpoint");
+    const bpToken = this.expect(TokenType.IDENT, "breakpoint");
     this.expect(TokenType.DOT);
-    const keyTok = this.expect(TokenType.IDENT, "CSS property name");
+    const keyToken = this.expect(TokenType.IDENT, "nome de propriedade CSS");
     this.expect(TokenType.COLON);
     const value = this.parseValue();
-
     return {
       kind: "ResponsiveProp",
-      breakpoint: bpTok.value as "sm" | "md" | "lg" | "xl",
-      key: keyTok.value,
+      breakpoint: bpToken.value as "sm" | "md" | "lg" | "xl",
+      key: keyToken.value,
       value,
-      line: bpTok.line,
-      col: bpTok.col,
+      line: bpToken.line,
+      col: bpToken.col,
     };
   }
 
-  /**
-   * EventProp := AT IDENT COLON IDENT (DOT IDENT)?
-   */
   private parseEventProp(): EventProp {
-    const atTok = this.advance(); // consume @
-    const eventTok = this.expect(TokenType.IDENT, "event name");
+    const atToken = this.expect(TokenType.AT);
+    const eventToken = this.expect(TokenType.IDENT, "nome de evento");
     this.expect(TokenType.COLON);
-    const firstIdent = this.expect(TokenType.IDENT, "action or namespace");
+    const firstPart = this.expect(TokenType.IDENT, "ação do evento");
 
     let namespace: string | null = null;
-    let action: string;
+    let action = firstPart.value;
 
     if (this.check(TokenType.DOT)) {
-      // @event:namespace.action
-      this.advance(); // consume DOT
-      const actionTok = this.expect(TokenType.IDENT, "action name");
-      namespace = firstIdent.value;
-      action = actionTok.value;
-    } else {
-      // @event:action
-      namespace = null;
-      action = firstIdent.value;
+      this.advance(); // consumir DOT
+      const actionToken = this.expect(TokenType.IDENT, "ação do evento");
+      namespace = firstPart.value;
+      action = actionToken.value;
     }
 
     return {
       kind: "EventProp",
-      event: eventTok.value,
+      event: eventToken.value,
       action,
       namespace,
-      line: atTok.line,
-      col: atTok.col,
+      line: atToken.line,
+      col: atToken.col,
     };
   }
 
-  /**
-   * AttrProp := DOLLAR IDENT COLON (STRING | ValueTokens)
-   */
   private parseAttrProp(): AttrProp {
-    const dollarTok = this.advance(); // consume $
-    const nameTok = this.expect(TokenType.IDENT, "attribute name");
+    const dollarToken = this.expect(TokenType.DOLLAR);
+    const nameToken = this.expect(TokenType.IDENT, "nome de atributo HTML");
     this.expect(TokenType.COLON);
 
     let value: string;
@@ -338,591 +177,464 @@ export class Parser {
       value = this.parseValue();
     }
 
+    return { kind: "AttrProp", name: nameToken.value, value, line: dollarToken.line, col: dollarToken.col };
+  }
+
+  private parseSlotPropInDef(): SlotPropDef {
+    const start = this.expect(TokenType.LANGLE);
+    const slotNameToken = this.expect(TokenType.IDENT, "nome do slot de prop");
+    this.expect(TokenType.RANGLE);
+    const cssKeyToken = this.expect(TokenType.IDENT, "nome da propriedade CSS");
+    this.expect(TokenType.COLON);
+    const defaultValue = this.parseValue();
+
     return {
-      kind: "AttrProp",
-      name: nameTok.value,
-      value,
-      line: dollarTok.line,
-      col: dollarTok.col,
+      kind: "SlotPropDef",
+      slotName: slotNameToken.value,
+      cssKey: cssKeyToken.value,
+      defaultValue,
+      line: start.line,
+      col: start.col,
     };
   }
 
-  // ── Value parsing ────────────────────────────────────────────────
+  // ─── Value parsing ───
 
-  /**
-   * Reads a CSS / attribute value.
-   *
-   * Accumulates tokens into a string buffer.
-   * Terminators: RPAREN, RBRACKET, COMMA, EOF,
-   * or a new line with IDENT COLON (= new property starts).
-   *
-   * Handles:
-   *  - IDENT → plain value token
-   *  - HASH + IDENT → "#value" (hex colour)
-   *  - STRING → quoted value
-   */
   private parseValue(): string {
-    const parts: string[] = [];
+    let parts: string[] = [];
+    const startLine = this.current().line;
 
     while (!this.isAtEnd()) {
-      const tok = this.current();
+      const cur = this.current();
 
-      // Terminators
+      // Terminadores
       if (
-        tok.type === TokenType.RPAREN ||
-        tok.type === TokenType.RBRACKET ||
-        tok.type === TokenType.COMMA ||
-        tok.type === TokenType.RANGLE
+        cur.type === TokenType.RPAREN ||
+        cur.type === TokenType.RBRACKET ||
+        cur.type === TokenType.COMMA ||
+        cur.type === TokenType.EOF ||
+        cur.type === TokenType.RANGLE
       ) {
         break;
       }
 
-      // IDENT followed by COLON means a new property is starting → stop
-      // This handles both same-line and multi-line props.
-      if (tok.type === TokenType.IDENT && this.peek(1).type === TokenType.COLON) {
-        // Only stop if we already have at least one part (the value for the current prop).
-        // If parts is empty, this IS the value (e.g. single-word value like "flex").
-        // Wait — actually if parts is empty we haven't consumed ANY value yet,
-        // and `IDENT COLON` here means *this token* is the start of a new property,
-        // not our value. This is actually correct: we should stop and the single-word
-        // value case is handled before reaching here. But if we get here with no parts,
-        // we should NOT consume it — it means value was empty (shouldn't happen in practice).
-        if (parts.length > 0) {
+      // Novos prefixos de prop sempre terminam o valor
+      if (
+        cur.type === TokenType.AT ||
+        cur.type === TokenType.DOLLAR ||
+        cur.type === TokenType.LANGLE
+      ) {
+        break;
+      }
+
+      // IDENT seguido de COLON ou DOT indica nova propriedade (se já temos algum valor)
+      if (cur.type === TokenType.IDENT && parts.length > 0) {
+        const next = this.peek(1);
+        if (next.type === TokenType.COLON || next.type === TokenType.DOT) {
           break;
         }
-        // If parts is empty, this ident IS our value (unusual but possible).
-        // Fall through so it gets consumed as a value token.
-        // But actually IDENT COLON in value position with empty parts means
-        // the value is empty — we shouldn't consume the next property key.
-        // Let's just break — the caller already consumed colon before calling us.
-        break;
       }
 
-      // Responsive prop starting: IDENT(bp) DOT → stop
-      if (
-        tok.type === TokenType.IDENT &&
-        BREAKPOINTS.has(tok.value) &&
-        this.peek(1).type === TokenType.DOT &&
-        this.peek(2).type === TokenType.IDENT
-      ) {
-        break;
-      }
-
-      // @event or $attr starting → stop
-      if (tok.type === TokenType.AT || tok.type === TokenType.DOLLAR) {
-        break;
-      }
-
-      // HASH + IDENT → "#value"
-      if (tok.type === TokenType.HASH) {
-        this.advance(); // consume HASH
-        const identTok = this.expect(TokenType.IDENT, "hex color value");
-        parts.push("#" + identTok.value);
-        continue;
-      }
-
-      // IDENT → plain value
-      if (tok.type === TokenType.IDENT) {
-        parts.push(this.advance().value);
-        continue;
-      }
-
-      // STRING → quoted value (for $attr values, etc.)
-      if (tok.type === TokenType.STRING) {
-        parts.push(this.advance().value);
-        continue;
-      }
-
-      // DOT inside a value
-      if (tok.type === TokenType.DOT) {
-        this.advance();
-        if (this.check(TokenType.IDENT)) {
-          const prev = parts.length > 0 ? parts.pop()! : "";
-          parts.push(prev + "." + this.advance().value);
-        } else {
-          parts.push(".");
+      // Se estamos numa nova linha e encontramos IDENT seguido de COLON/DOT — nova prop
+      if (cur.line > startLine && cur.type === TokenType.IDENT) {
+        const next = this.peek(1);
+        if (next.type === TokenType.COLON || next.type === TokenType.DOT) {
+          break;
         }
+      }
+
+      // Cor hexadecimal: HASH + IDENT
+      if (cur.type === TokenType.HASH) {
+        this.advance();
+        const identToken = this.expect(TokenType.IDENT, "valor hexadecimal");
+        parts.push("#" + identToken.value);
         continue;
       }
 
-      // Anything else → stop
+      if (cur.type === TokenType.IDENT) {
+        parts.push(this.advance().value);
+        continue;
+      }
+
+      // Fallback: qualquer outro token como parte do valor
       break;
+    }
+
+    if (parts.length === 0) {
+      this.error("Valor esperado");
     }
 
     return parts.join(" ");
   }
 
-  // ── Node declaration ─────────────────────────────────────────────
+  // ─── Node Parsing ───
 
-  /**
-   * NodeDecl := LBRACKET NodeHead NodeBody RBRACKET
-   */
   private parseNodeDecl(): NodeDecl {
-    const bracketTok = this.expect(TokenType.LBRACKET);
-
-    // ── Head ───────────────────────────────────────────────────────
-
+    const start = this.expect(TokenType.LBRACKET);
     let id: string | null = null;
     let tag: string;
 
+    // ID opcional: #id::tag
     if (this.check(TokenType.HASH)) {
-      // #id::tag
-      this.advance(); // consume HASH
-      const idTok = this.expect(TokenType.IDENT, "node id");
-      id = idTok.value;
-
-      // Must be followed by ::
-      if (!this.check(TokenType.DOUBLE_COLON)) {
-        throw new ParseIdWithoutTagError(id, idTok.line, idTok.col);
-      }
-      this.advance(); // consume ::
-
-      const tagTok = this.expect(TokenType.IDENT, "tag name");
-      tag = tagTok.value;
+      this.advance();
+      const idToken = this.expect(TokenType.IDENT, "id do nó");
+      id = idToken.value;
+      this.expect(TokenType.DOUBLE_COLON, "separador :: entre id e tag");
+      const tagToken = this.expect(TokenType.IDENT, "nome da tag");
+      tag = tagToken.value;
     } else {
-      const tagTok = this.expect(TokenType.IDENT, "tag name");
-      tag = tagTok.value;
+      const tagToken = this.expect(TokenType.IDENT, "nome da tag");
+      tag = tagToken.value;
     }
 
-    // Validate tag
+    // Validar tag
     if (!ALLOWED_TAGS.has(tag)) {
-      throw new ParseUnknownTagError(tag, bracketTok.line, bracketTok.col);
+      this.error(`Tag desconhecida: "${tag}". Permitidas: ${[...ALLOWED_TAGS].join(", ")}`);
     }
-
-    // ── Inline props |> ────────────────────────────────────────────
-
-    let inlineProps: Prop[] | null = null;
-
-    if (this.check(TokenType.PIPE_ARROW)) {
-      this.advance(); // consume |>
-      inlineProps = [];
-
-      // Read props until we reach RBRACKET, STRING, LBRACKET, LPAREN, or new-line
-      while (
-        !this.isAtEnd() &&
-        !this.check(TokenType.RBRACKET) &&
-        !this.check(TokenType.STRING) &&
-        !this.check(TokenType.LBRACKET) &&
-        !this.check(TokenType.LPAREN)
-      ) {
-        // If we've moved to a new line and see something that doesn't look like a prop, stop
-        inlineProps.push(this.parseOneProp());
-      }
-    }
-
-    // ── Body: text or children ─────────────────────────────────────
 
     let text: string | null = null;
+    let inlineProps: Prop[] | null = null;
     const children: ChildNode[] = [];
 
+    // Inline props |>
+    if (this.check(TokenType.PIPE_ARROW)) {
+      this.advance();
+      inlineProps = this.parseInlineProps();
+    }
+
+    // Texto ou filhos
     if (this.check(TokenType.STRING)) {
       text = this.advance().value;
+      // Verificar que não há filhos depois do texto
+      if (this.check(TokenType.LBRACKET) || this.check(TokenType.LPAREN)) {
+        this.error(`Nó "${tag}" não pode ter texto inline e filhos ao mesmo tempo`);
+      }
     } else {
-      // Parse children until RBRACKET
+      // Filhos
       while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
         if (this.check(TokenType.LPAREN)) {
           children.push(this.parsePropBlock());
+        } else if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.RANGLE) {
+          children.push(this.parseComponentCall());
+        } else if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.DOUBLE_RANGLE) {
+          this.error("Definições de componente não podem ser aninhadas. Use [>>Name] apenas no nível superior");
         } else if (this.check(TokenType.LBRACKET)) {
-          const next = this.peek(1);
-          if (next.type === TokenType.DOUBLE_RANGLE) {
-            throw new ParseNestedDefError(this.current().line, this.current().col);
-          } else if (next.type === TokenType.RANGLE) {
-            children.push(this.parseComponentCall());
-          } else {
-            children.push(this.parseNodeDecl());
-          }
+          children.push(this.parseNodeDecl());
         } else {
-          this.error(
-            `Unexpected token inside node body: ${TokenType[this.current().type]} ("${this.current().value}")`,
-          );
+          this.error(`Token inesperado dentro de nó: ${this.current().type} ("${this.current().value}")`);
         }
       }
     }
 
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
-
-    // Validate: cannot have both text and children
-    if (text !== null && children.length > 0) {
-      throw new ParseTextAndChildrenError(tag, bracketTok.line, bracketTok.col);
-    }
+    this.expect(TokenType.RBRACKET);
 
     return {
       kind: "NodeDecl",
-      id,
-      tag,
-      text,
-      inlineProps,
-      children,
-      line: bracketTok.line,
-      col: bracketTok.col,
+      id, tag, text, inlineProps, children,
+      line: start.line, col: start.col,
     };
   }
 
-  // ── Component definition ─────────────────────────────────────────
+  private parseInlineProps(): Prop[] {
+    const props: Prop[] = [];
+    const startLine = this.current().line;
 
-  /**
-   * ComponentDef := LBRACKET DOUBLE_RANGLE IDENT PropSlotDefBlock? NodeDefBody RBRACKET
-   */
+    while (!this.isAtEnd()) {
+      const cur = this.current();
+
+      // Parar ao mudar de construção
+      if (
+        cur.type === TokenType.RBRACKET ||
+        cur.type === TokenType.LBRACKET ||
+        cur.type === TokenType.STRING ||
+        cur.type === TokenType.EOF
+      ) {
+        break;
+      }
+
+      // Se mudou de linha e não parece uma prop, parar
+      if (cur.line > startLine) {
+        if (
+          cur.type !== TokenType.AT &&
+          cur.type !== TokenType.DOLLAR &&
+          cur.type !== TokenType.IDENT &&
+          cur.type !== TokenType.LANGLE
+        ) {
+          break;
+        }
+        // Verificar se é início de nó ou prop
+        if (cur.type === TokenType.IDENT) {
+          const next = this.peek(1);
+          if (next.type !== TokenType.COLON && next.type !== TokenType.DOT) {
+            break;
+          }
+        }
+      }
+
+      props.push(this.parseOneProp());
+    }
+
+    return props;
+  }
+
+  // ─── Component Def ───
+
   private parseComponentDef(): ComponentDef {
-    const bracketTok = this.expect(TokenType.LBRACKET);
+    const start = this.expect(TokenType.LBRACKET);
     this.expect(TokenType.DOUBLE_RANGLE);
 
-    const nameTok = this.expect(TokenType.IDENT, "component name");
-    const name = nameTok.value;
-
-    // Component names must start uppercase
-    if (name[0] !== name[0].toUpperCase() || !/^[A-Z]/.test(name)) {
-      throw new ParseComponentLowercaseError(name, nameTok.line, nameTok.col);
+    const nameToken = this.expect(TokenType.IDENT, "nome do componente");
+    if (!/^[A-Z]/.test(nameToken.value)) {
+      this.error(`Nomes de componente devem começar com letra maiúscula: "${nameToken.value}"`);
     }
-
-    // ── Optional prop slot definitions ─────────────────────────────
 
     let propSlots: SlotPropDef[] = [];
+    let body: ComponentBodyNode[] = [];
 
+    // PropSlotDefBlock opcional
     if (this.check(TokenType.LPAREN)) {
-      propSlots = this.parseSlotPropDefBlock();
+      propSlots = this.parsePropSlotDefBlock();
     }
 
-    // ── Body: structural nodes (may contain SlotNodeDefs) ──────────
-
-    const body: ComponentBodyNode[] = [];
-
-    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
-      if (this.check(TokenType.LBRACKET)) {
-        const next = this.peek(1);
-
-        if (next.type === TokenType.DOUBLE_RANGLE) {
-          throw new ParseNestedDefError(this.current().line, this.current().col);
-        }
-
-        // Check for SlotNodeDef: [<slotName>tag "text"]
-        if (next.type === TokenType.LANGLE) {
-          body.push(this.parseSlotNodeDef());
-        } else {
-          body.push(this.parseComponentBodyNode());
-        }
-      } else {
-        this.error(
-          `Unexpected token in component body: ${TokenType[this.current().type]} ("${this.current().value}")`,
-        );
-      }
+    // NodeDefBody: um NodeDecl cujos filhos podem conter SlotNodeDefs
+    if (this.check(TokenType.LBRACKET)) {
+      body = [this.parseComponentBodyNode()];
     }
 
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
+    this.expect(TokenType.RBRACKET);
 
     return {
       kind: "ComponentDef",
-      name,
+      name: nameToken.value,
       propSlots,
       body,
-      line: bracketTok.line,
-      col: bracketTok.col,
+      line: start.line,
+      col: start.col,
     };
   }
 
-  /**
-   * Parses a `NodeDecl` inside a `ComponentDef`'s body.
-   * Children can be either regular `NodeDecl` or `SlotNodeDef`.
-   */
-  private parseComponentBodyNode(): NodeDecl {
-    const bracketTok = this.expect(TokenType.LBRACKET);
-
-    let id: string | null = null;
-    let tag: string;
-
-    if (this.check(TokenType.HASH)) {
-      this.advance();
-      const idTok = this.expect(TokenType.IDENT, "node id");
-      id = idTok.value;
-      if (!this.check(TokenType.DOUBLE_COLON)) {
-        throw new ParseIdWithoutTagError(id, idTok.line, idTok.col);
-      }
-      this.advance();
-      tag = this.expect(TokenType.IDENT, "tag name").value;
-    } else {
-      tag = this.expect(TokenType.IDENT, "tag name").value;
-    }
-
-    if (!ALLOWED_TAGS.has(tag)) {
-      throw new ParseUnknownTagError(tag, bracketTok.line, bracketTok.col);
-    }
-
-    // Inline props
-    let inlineProps: Prop[] | null = null;
-    if (this.check(TokenType.PIPE_ARROW)) {
-      this.advance();
-      inlineProps = [];
-      while (
-        !this.isAtEnd() &&
-        !this.check(TokenType.RBRACKET) &&
-        !this.check(TokenType.STRING) &&
-        !this.check(TokenType.LBRACKET) &&
-        !this.check(TokenType.LPAREN)
-      ) {
-        inlineProps.push(this.parseOneProp());
-      }
-    }
-
-    let text: string | null = null;
-    const children: ChildNode[] = [];
-
-    if (this.check(TokenType.STRING)) {
-      text = this.advance().value;
-    } else {
-      while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
-        if (this.check(TokenType.LPAREN)) {
-          children.push(this.parsePropBlock());
-        } else if (this.check(TokenType.LBRACKET)) {
-          const next = this.peek(1);
-          if (next.type === TokenType.DOUBLE_RANGLE) {
-            throw new ParseNestedDefError(this.current().line, this.current().col);
-          }
-          // Check for SlotNodeDef: [<slotName>tag "text"]
-          if (next.type === TokenType.LANGLE) {
-            children.push(this.parseSlotNodeDef() as unknown as ChildNode);
-          } else if (next.type === TokenType.RANGLE) {
-            children.push(this.parseComponentCall());
-          } else {
-            children.push(this.parseComponentBodyNode());
-          }
-        } else {
-          this.error(
-            `Unexpected token in component body node: ${TokenType[this.current().type]}`,
-          );
-        }
-      }
-    }
-
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
-
-    return {
-      kind: "NodeDecl",
-      id,
-      tag,
-      text,
-      inlineProps,
-      children,
-      line: bracketTok.line,
-      col: bracketTok.col,
-    };
-  }
-
-  /**
-   * PropSlotDefBlock := LPAREN SlotPropDefEntry+ RPAREN
-   * SlotPropDefEntry := LANGLE IDENT RANGLE IDENT COLON Value
-   */
-  private parseSlotPropDefBlock(): SlotPropDef[] {
+  private parsePropSlotDefBlock(): SlotPropDef[] {
     this.expect(TokenType.LPAREN);
     const slots: SlotPropDef[] = [];
 
     while (!this.check(TokenType.RPAREN) && !this.isAtEnd()) {
-      const angleTok = this.expect(TokenType.LANGLE, "'<' for slot definition");
-      const slotNameTok = this.expect(TokenType.IDENT, "slot name");
-      this.expect(TokenType.RANGLE, "'>' closing slot name");
-      const cssKeyTok = this.expect(TokenType.IDENT, "CSS property name");
-      this.expect(TokenType.COLON);
-      const defaultValue = this.parseValue();
-
-      slots.push({
-        kind: "SlotPropDef",
-        slotName: slotNameTok.value,
-        cssKey: cssKeyTok.value,
-        defaultValue,
-        line: angleTok.line,
-        col: angleTok.col,
-      });
+      if (this.check(TokenType.LANGLE)) {
+        slots.push(this.parseSlotPropInDef());
+      } else {
+        // Prop normal dentro de componente (sem slot)
+        this.parseOneProp(); // descarta - não é slot
+      }
     }
 
-    this.expect(TokenType.RPAREN, "RPAREN ')'");
+    this.expect(TokenType.RPAREN);
     return slots;
   }
 
-  /**
-   * SlotNodeDef := LBRACKET LANGLE IDENT RANGLE IDENT STRING? RBRACKET
-   * i.e. [<slotName>tag "defaultText"]
-   */
+  private parseComponentBodyNode(): NodeDecl {
+    const start = this.expect(TokenType.LBRACKET);
+    const tagToken = this.expect(TokenType.IDENT, "tag raiz do componente");
+
+    if (!ALLOWED_TAGS.has(tagToken.value)) {
+      this.error(`Tag desconhecida: "${tagToken.value}"`);
+    }
+
+    const children: ComponentBodyNode[] = [];
+
+    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+      // SlotNodeDef: [<slotName>tag "texto"]
+      if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.LANGLE) {
+        children.push(this.parseSlotNodeDef());
+      } else if (this.check(TokenType.LBRACKET)) {
+        children.push(this.parseNodeDecl());
+      } else {
+        this.error(`Token inesperado no corpo do componente: ${this.current().type}`);
+      }
+    }
+
+    this.expect(TokenType.RBRACKET);
+
+    return {
+      kind: "NodeDecl",
+      id: null,
+      tag: tagToken.value,
+      text: null,
+      inlineProps: null,
+      children: children as ChildNode[],
+      line: start.line,
+      col: start.col,
+    };
+  }
+
   private parseSlotNodeDef(): SlotNodeDef {
-    const bracketTok = this.expect(TokenType.LBRACKET);
+    const start = this.expect(TokenType.LBRACKET);
     this.expect(TokenType.LANGLE);
-    const slotNameTok = this.expect(TokenType.IDENT, "slot name");
+    const slotNameToken = this.expect(TokenType.IDENT, "nome do slot de nó");
     this.expect(TokenType.RANGLE);
-    const tagTok = this.expect(TokenType.IDENT, "tag name");
+    const tagToken = this.expect(TokenType.IDENT, "tag do slot de nó");
 
     let defaultText = "";
     if (this.check(TokenType.STRING)) {
       defaultText = this.advance().value;
     }
 
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
+    this.expect(TokenType.RBRACKET);
 
     return {
       kind: "SlotNodeDef",
-      slotName: slotNameTok.value,
-      tag: tagTok.value,
+      slotName: slotNameToken.value,
+      tag: tagToken.value,
       defaultText,
-      line: bracketTok.line,
-      col: bracketTok.col,
+      line: start.line,
+      col: start.col,
     };
   }
 
-  // ── Component call ───────────────────────────────────────────────
+  // ─── Component Call ───
 
-  /**
-   * ComponentCall := LBRACKET RANGLE IDENT
-   *                  (HASH IDENT)?
-   *                  PropSlotCall?
-   *                  NodeSlotCall?
-   *                  ExtraChild*
-   *                  RBRACKET
-   */
   private parseComponentCall(): ComponentCall {
-    const bracketTok = this.expect(TokenType.LBRACKET);
+    const start = this.expect(TokenType.LBRACKET);
     this.expect(TokenType.RANGLE);
 
-    const nameTok = this.expect(TokenType.IDENT, "component name");
-    const name = nameTok.value;
-
-    // Component names must start uppercase
-    if (!/^[A-Z]/.test(name)) {
-      throw new ParseComponentLowercaseError(name, nameTok.line, nameTok.col);
+    const nameToken = this.expect(TokenType.IDENT, "nome do componente");
+    if (!/^[A-Z]/.test(nameToken.value)) {
+      this.error(`Nomes de componente devem começar com letra maiúscula: "${nameToken.value}"`);
     }
 
-    // Optional #id
     let id: string | null = null;
-    if (this.check(TokenType.HASH)) {
-      this.advance(); // consume HASH
-      const idTok = this.expect(TokenType.IDENT, "component call id");
-      id = idTok.value;
-    }
-
-    // Optional PropSlotCall: (<slot:val, ...>)
-    let propOverrides: SlotPropOverride[] = [];
-    if (
-      this.check(TokenType.LPAREN) &&
-      this.peek(1).type === TokenType.LANGLE
-    ) {
-      propOverrides = this.parsePropSlotCall();
-    }
-
-    // Optional NodeSlotCall: [<slot "val", ...>]
-    let slotOverrides: SlotNodeOverride[] = [];
-    if (
-      this.check(TokenType.LBRACKET) &&
-      this.peek(1).type === TokenType.LANGLE
-    ) {
-      slotOverrides = this.parseNodeSlotCall();
-    }
-
-    // ExtraChild* — plain nodes, prop blocks, or nested component calls
+    const propOverrides: SlotPropOverride[] = [];
+    const slotOverrides: SlotNodeOverride[] = [];
     const extraChildren: ChildNode[] = [];
+
+    // ID opcional: #id
+    if (this.check(TokenType.HASH)) {
+      this.advance();
+      id = this.expect(TokenType.IDENT, "id do componente").value;
+    }
+
+    // Parse do corpo da chamada
     while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
-      if (this.check(TokenType.LPAREN)) {
+      // PropSlotCall: (<slot:val, ...>)
+      if (this.check(TokenType.LPAREN) && this.peek(1).type === TokenType.LANGLE) {
+        this.advance(); // (
+        this.advance(); // <
+        this.parsePropSlotCall(propOverrides);
+        this.expect(TokenType.RANGLE);
+        this.expect(TokenType.RPAREN);
+      }
+      // NodeSlotCall: [<slot "val", ...>]
+      else if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.LANGLE) {
+        this.advance(); // [
+        this.advance(); // <
+        this.parseNodeSlotCall(slotOverrides);
+        this.expect(TokenType.RANGLE);
+        this.expect(TokenType.RBRACKET);
+      }
+      // PropBlock extra
+      else if (this.check(TokenType.LPAREN)) {
         extraChildren.push(this.parsePropBlock());
-      } else if (this.check(TokenType.LBRACKET)) {
-        const next = this.peek(1);
-        if (next.type === TokenType.DOUBLE_RANGLE) {
-          throw new ParseNestedDefError(this.current().line, this.current().col);
-        }
-        if (next.type === TokenType.RANGLE) {
-          extraChildren.push(this.parseComponentCall());
-        } else {
-          extraChildren.push(this.parseNodeDecl());
-        }
-      } else {
-        this.error(
-          `Unexpected token in component call body: ${TokenType[this.current().type]} ("${this.current().value}")`,
-        );
+      }
+      // ComponentCall aninhado
+      else if (this.check(TokenType.LBRACKET) && this.peek(1).type === TokenType.RANGLE) {
+        extraChildren.push(this.parseComponentCall());
+      }
+      // NodeDecl extra
+      else if (this.check(TokenType.LBRACKET)) {
+        extraChildren.push(this.parseNodeDecl());
+      }
+      else {
+        this.error(`Token inesperado na chamada de componente: ${this.current().type}`);
       }
     }
 
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
+    this.expect(TokenType.RBRACKET);
 
     return {
       kind: "ComponentCall",
-      name,
+      name: nameToken.value,
       id,
       propOverrides,
       slotOverrides,
       extraChildren,
-      line: bracketTok.line,
-      col: bracketTok.col,
+      line: start.line,
+      col: start.col,
     };
   }
 
-  /**
-   * PropSlotCall := LPAREN LANGLE SlotPropPair (COMMA SlotPropPair)* RANGLE RPAREN
-   * SlotPropPair := IDENT COLON Value
-   */
-  private parsePropSlotCall(): SlotPropOverride[] {
-    this.expect(TokenType.LPAREN);
-    this.expect(TokenType.LANGLE);
+  private parsePropSlotCall(overrides: SlotPropOverride[]): void {
+    while (!this.check(TokenType.RANGLE) && !this.isAtEnd()) {
+      const slotToken = this.expect(TokenType.IDENT, "nome do slot de prop");
+      this.expect(TokenType.COLON);
+      const value = this.parseValue();
 
-    const overrides: SlotPropOverride[] = [];
+      overrides.push({
+        kind: "SlotPropOverride",
+        slotName: slotToken.value,
+        value,
+        line: slotToken.line,
+        col: slotToken.col,
+      });
 
-    // First pair
-    overrides.push(this.parseOneSlotPropOverride());
-
-    // Subsequent pairs separated by COMMA
-    while (this.check(TokenType.COMMA)) {
-      this.advance(); // consume COMMA
-      overrides.push(this.parseOneSlotPropOverride());
+      if (this.check(TokenType.COMMA)) {
+        this.advance();
+      }
     }
-
-    this.expect(TokenType.RANGLE, "'>' closing slot overrides");
-    this.expect(TokenType.RPAREN, "RPAREN ')'");
-
-    return overrides;
   }
 
-  private parseOneSlotPropOverride(): SlotPropOverride {
-    const nameTok = this.expect(TokenType.IDENT, "slot name");
-    this.expect(TokenType.COLON);
-    const value = this.parseValue();
+  private parseNodeSlotCall(overrides: SlotNodeOverride[]): void {
+    while (!this.check(TokenType.RANGLE) && !this.isAtEnd()) {
+      const slotToken = this.expect(TokenType.IDENT, "nome do slot de nó");
+      const textToken = this.expect(TokenType.STRING, "texto do slot");
 
-    return {
-      kind: "SlotPropOverride",
-      slotName: nameTok.value,
-      value,
-      line: nameTok.line,
-      col: nameTok.col,
-    };
-  }
+      overrides.push({
+        kind: "SlotNodeOverride",
+        slotName: slotToken.value,
+        text: textToken.value,
+        line: slotToken.line,
+        col: slotToken.col,
+      });
 
-  /**
-   * NodeSlotCall := LBRACKET LANGLE SlotNodePair (COMMA SlotNodePair)* RANGLE RBRACKET
-   * SlotNodePair := IDENT STRING
-   */
-  private parseNodeSlotCall(): SlotNodeOverride[] {
-    this.expect(TokenType.LBRACKET);
-    this.expect(TokenType.LANGLE);
-
-    const overrides: SlotNodeOverride[] = [];
-
-    // First pair
-    overrides.push(this.parseOneSlotNodeOverride());
-
-    // Subsequent pairs separated by COMMA
-    while (this.check(TokenType.COMMA)) {
-      this.advance(); // consume COMMA
-      overrides.push(this.parseOneSlotNodeOverride());
+      if (this.check(TokenType.COMMA)) {
+        this.advance();
+      }
     }
-
-    this.expect(TokenType.RANGLE, "'>' closing slot overrides");
-    this.expect(TokenType.RBRACKET, "RBRACKET ']'");
-
-    return overrides;
   }
 
-  private parseOneSlotNodeOverride(): SlotNodeOverride {
-    const nameTok = this.expect(TokenType.IDENT, "slot name");
-    const textTok = this.expect(TokenType.STRING, "slot text override");
+  // ─── Utility ───
 
-    return {
-      kind: "SlotNodeOverride",
-      slotName: nameTok.value,
-      text: textTok.value,
-      line: nameTok.line,
-      col: nameTok.col,
-    };
+  private current(): Token {
+    return this.tokens[this.pos] || { type: TokenType.EOF, value: "", line: 0, col: 0 };
+  }
+
+  private peek(offset: number = 0): Token {
+    const idx = this.pos + offset;
+    return this.tokens[idx] || { type: TokenType.EOF, value: "", line: 0, col: 0 };
+  }
+
+  private advance(): Token {
+    const token = this.current();
+    this.pos++;
+    return token;
+  }
+
+  private expect(type: TokenType, hint?: string): Token {
+    const token = this.current();
+    if (token.type !== type) {
+      const hintStr = hint ? ` (${hint})` : "";
+      this.error(`Esperado ${type}${hintStr}, encontrado ${token.type} ("${token.value}")`);
+    }
+    return this.advance();
+  }
+
+  private check(type: TokenType): boolean {
+    return this.current().type === type;
+  }
+
+  private isAtEnd(): boolean {
+    return this.current().type === TokenType.EOF;
+  }
+
+  private error(msg: string, token?: Token): never {
+    const t = token || this.current();
+    throw new ParseError(msg, t.line, t.col);
   }
 }

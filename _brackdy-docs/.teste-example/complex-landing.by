@@ -1,0 +1,152 @@
+@logic "./landing.logic.ts"
+
+[>>FeatureCard
+  (
+    <bg>background:#202A44
+    <accent>color:#A8B2D8
+    <pad>padding:24px
+  )
+  [article
+    [<icon>h3 "✦"]
+    [<title>h2 "Recurso"]
+    [<desc>p "Descrição padrão do recurso."]
+  ]
+]
+
+[>>StatBadge
+  (
+    <bg>background:#1D253B
+    <pad>padding:20px
+  )
+  [article
+    [<value>h2 "+00%"]
+    [<detail>p "Métrica de impacto."]
+  ]
+]
+
+[>>ProofSection
+  (
+    <bg>background:#131B2E
+    <pad>padding:40px
+  )
+  [section
+    [<heading>h2 "Título da seção"]
+    [<sub>p "Texto de apoio da seção."]
+  ]
+]
+
+(
+  background:#0F1117
+  color:#F5F7FF
+  padding:32px
+)
+[#landing::main
+  (
+    background:#121826
+    padding:20px
+  )
+
+  [header
+    [nav
+      [a |> $href:"#hero-section" "Início"]
+      [a |> $href:"#feature-grid" "Recursos"]
+      [a |> $href:"#highlights" "Destaques"]
+      [a |> $href:"#social-proof" "Resultados"]
+      [a |> $href:"#cta-final" "Contato"]
+    ]
+    [button |> $type:"button" @click:nav.toggleMenu "☰ Menu"]
+  ]
+
+  [#hero-section::section |> background:#1B2235 padding:48px @click:openHero
+    [#hero-title::h1 "Operação inteligente para produtos digitais"]
+    [p "Planeje, execute e monitore campanhas com automações orientadas por dados em tempo real."]
+    [nav
+      [a |> $href:"/demo" "Agendar demonstração"]
+      [a |> $href:"/pricing" "Ver planos"]
+    ]
+    [button |> $type:"button" @click:hero.openVideo "▶ Ver demonstração"]
+  ]
+
+  (
+    display:grid
+    grid-template-columns:1fr
+    gap:24px
+    sm.grid-template-columns:1fr 1fr
+    lg.grid-template-columns:1fr 1fr 1fr
+  )
+  [#feature-grid::main
+    [>FeatureCard
+      (<bg:#202A44, accent:#7B8CDE, pad:24px>)
+      [<icon "⚡", title "Automação de jornadas", desc "Dispare ações baseadas em comportamento sem depender de fluxos manuais.">]
+    ]
+
+    [>FeatureCard
+      (<bg:#22304D, accent:#9EB4F0>)
+      [<icon "📊", title "Insights em minutos", desc "Consolide métricas de aquisição, retenção e receita em um único painel.">]
+    ]
+
+    [>FeatureCard
+      (<bg:#243755>)
+      [<icon "🧪", title "Governança de experimentos", desc "Padronize hipóteses, critérios de sucesso e rollout com segurança.">]
+    ]
+
+    [>FeatureCard
+      (<bg:#1E2B48, accent:#B0C4FF>)
+      [<title "Segmentação dinâmica", desc "Crie audiências com precisão usando dados comportamentais e transacionais.">]
+    ]
+
+    [>FeatureCard
+      (<bg:#212E4A>)
+      [<icon "🔔", title "Alertas preditivos", desc "Identifique riscos de churn antes que aconteçam e aja preventivamente.">]
+    ]
+
+    [>FeatureCard]
+  ]
+
+  [>ProofSection #highlights
+    (<bg:#131B2E, pad:40px>)
+    [<heading "Por que líderes escolhem nossa plataforma", sub "Eficiência, escala e previsibilidade em cada etapa do produto.">]
+    [>FeatureCard (<bg:#1A2640, accent:#8AA8E8>) [<icon "🏆", title "Adotado por líderes", desc "Presente em mais de 200 empresas B2B de alto crescimento.">]]
+    [>FeatureCard (<bg:#1C2840>) [<icon "🔒", title "Segurança enterprise", desc "SOC 2 Tipo II, criptografia ponta a ponta e SSO.">]]
+    [>FeatureCard (<bg:#1E2A42, accent:#A0BCE0>) [<icon "🌍", title "Escala global", desc "Infraestrutura distribuída com SLA de 99.9% e suporte dedicado.">]]
+  ]
+
+  [#social-proof::section |> background:#151B2C padding:40px @click:openCases
+    [h2 "Times de alta performance já usam"]
+    [p "De scale-ups a empresas globais, reduzindo ciclo de decisão e custo operacional."]
+    (
+      display:grid
+      grid-template-columns:1fr
+      gap:16px
+      md.grid-template-columns:1fr 1fr
+      xl.grid-template-columns:1fr 1fr 1fr
+    )
+    [main
+      [>StatBadge
+        (<bg:#1D253B>)
+        [<value "+42%", detail "de conversão em 90 dias com segmentação dinâmica e testes contínuos.">]
+      ]
+      [>StatBadge
+        (<bg:#1F2941>)
+        [<value "-28%", detail "de churn com alertas preditivos e ações automáticas de retenção.">]
+      ]
+      [>StatBadge #revenue-stat
+        (<bg:#212D4B, pad:24px>)
+        [<value "3×", detail "de receita por usuário ativo com upsell automatizado baseado em dados.">]
+      ]
+    ]
+  ]
+
+  (
+    background:#0E1424
+    padding:24px
+  )
+  [#cta-final::footer |> @click:openContact
+    [h2 "Pronto para escalar com previsibilidade?"]
+    [p "Fale com o time e construa um plano de crescimento orientado por dados."]
+    [nav
+      [a |> $href:"/contact" "Solicitar contato"]
+      [button |> $type:"submit" @click:cta.submitForm "Começar agora →"]
+    ]
+  ]
+]
